@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Your Results</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h2>Target Role: {{ role }}</h2>
+        
+        <div style="width: 300px; margin: auto;">
+            <canvas id="scoreChart"></canvas>
+        </div>
+        
+        <h3 style="margin-top: 20px;">Match Score: {{ score }}%</h3>
+
+        <div class="results-box">
+            <h4>Skills Found in Resume:</h4>
+            <p>{{ found|join(", ") if found else "None detected" }}</p>
+
+            <h4>Roadmap: Skills You Need to Learn:</h4>
+            <ul>
+                {% for skill in gaps %}
+                <li class="gap-item">{{ skill }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+
+        <a href="/">Try Another Resume</a>
+    </div>
+
+    <script>
+        // Chart.js logic to show the match percentage
+        const ctx = document.getElementById('scoreChart').getContext('2d');
+        new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: ['Match', 'Gap'],
+                datasets: [{
+                    data: [{{ score }}, 100 - {{ score }}],
+                    backgroundColor: ['#4CAF50', '#f44336']
+                }]
+            }
+        });
+    </script>
+</body>
+</html>
