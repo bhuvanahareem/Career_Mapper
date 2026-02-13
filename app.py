@@ -1,4 +1,6 @@
+# ---------------- IMPORTS ----------------
 import os
+# MuPDF is a C based library to read PDFs and PyMuPDF is the Python wrapper for it
 import fitz  # PyMuPDF: The library that reads PDFs
 import spacy
 from flask import Flask, render_template, request
@@ -6,19 +8,23 @@ from spacy.matcher import PhraseMatcher
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
+
+# ---------------- CONFIGURATION ----------------
 app = Flask(__name__)
 nlp = spacy.load("en_core_web_sm") # Loading the pre-trained English model
+ # nlp - Brain of our NLP operations
+ # doc - A processed text that we can analyze
 
-# Configuration
+# Create uploads folder
 UPLOAD_FOLDER = 'uploads'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-# --- THE DATA SCIENCE & NLP LOGIC ---
 
+# ---------------- NLP LOGIC ----------------
 def get_skills_from_pdf(pdf_path):
     """NLP: Extracting specific words from a messy PDF string."""
     text = ""
-    with fitz.open(pdf_path) as doc:
+    with fitz.open(pdf_path) as doc:    # fitz.open() creates a doc object that we can iterate through to get text from each page
         for page in doc:
             text += page.get_text() # type: ignore
     
@@ -26,14 +32,17 @@ def get_skills_from_pdf(pdf_path):
     skill_bank = ["Python", "SQL", "Tableau", "Flask", "HTML", "CSS", "Machine Learning", "Statistics", "Data Visualization", "Javascript"]
     
     matcher = PhraseMatcher(nlp.vocab, attr="LOWER")
-    patterns = [nlp.make_doc(text) for text in skill_bank]
-    matcher.add("Skills", patterns)
+    patterns = [nlp.make_doc(text) for text in skill_bank]  # take each skill from skill bank
+    matcher.add("Skills", patterns)                         # And add it to matcher list
     
     doc = nlp(text)
-    matches = matcher(doc)
+    matches = matcher(doc) # parse thru doc and find matches based on patterns we added
+
     # Return unique skills found, formatted nicely
     return list(set([doc[start:end].text.title() for _, start, end in matches]))
 
+
+# ---------------- DATA SCIENCE LOGIC ----------------
 def calculate_match(user_skills, target_role):
     """DATA SCIENCE: Using Math to compare two sets of data."""
     job_db = {
@@ -44,23 +53,23 @@ def calculate_match(user_skills, target_role):
     target_skills = job_db.get(target_role, [])
     if not user_skills: return 0, target_skills
     
+    vectorizer = CountVectorizer()  # according to matching words in JD and resume, form two vectors with 0 & 1, dot product used
+    count_matrix = vectorizer.fit_transform([" ".join(user_skills), " ".join(target_skills)])
     # Cosine Similarity: Turning words into vectors (numbers) to find the 'angle' between them
     # A score of 1.0 is a perfect match, 0.0 is no match.
-    vectorizer = CountVectorizer()
-    count_matrix = vectorizer.fit_transform([" ".join(user_skills), " ".join(target_skills)])
     score = cosine_similarity(count_matrix[0:1], count_matrix[1:2])[0][0] # type: ignore
     
     # Gap Analysis: Simple set subtraction
     missing = [s for s in target_skills if s not in user_skills]
     return round(score * 100, 2), missing
 
-# --- THE ROUTES (Web Part) ---
 
-@app.route('/')
+# ---------------- THE ROUTES (Web Part) ----------------
+@app.route('/') #Homepage route
 def index():
     return render_template('index.html')
 
-@app.route('/analyze', methods=['POST'])
+@app.route('/analyze', methods=['POST'])  #When user hit submit button, POST request
 def analyze():
     file = request.files['resume']
     target = request.form.get('target_role')
