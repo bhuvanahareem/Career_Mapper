@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Career Trajectory Mapper</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container" style="text-align: center; margin-top: 50px; font-family: Arial;">
+        <h1>Career Trajectory Mapper</h1>
+        <form action="/analyze" method="post" enctype="multipart/form-data">
+            <input type="file" name="resume" accept=".pdf" required><br><br>
+            <input type="text" name="target_role" placeholder="Enter Domain (e.g. Data Analyst)" required style="padding: 10px; width: 300px;"><br><br>
+            <button type="submit" style="padding: 10px 20px; cursor: pointer;">Analyze My Career Path</button>
+        </form>
+    </div>
+</body>
+</html>

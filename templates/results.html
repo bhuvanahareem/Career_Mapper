@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Your Results</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container" style="max-width: 800px; margin: auto; font-family: Arial; text-align: center;">
+        <h2>Target Role: {{ role }}</h2>
+        
+        <div style="width: 350px; margin: auto;">
+            <canvas id="scoreChart"></canvas>
+        </div>
+
+        <h3>Skill Gap Score: {{ score }}%</h3>
+
+        <hr>
+
+        {% if score >= 85 %}
+            <h2 style="color: green;">You are ready to rock in this field!</h2>
+            <div style="background: #f0fdf4; padding: 15px; border-radius: 8px;">
+                <h4>Growth Options:</h4>
+                {% for item in growth %}
+                    <p>Based on your skills, you are also a {{ item.pct }}% match for <strong>{{ item.role }}</strong>!</p>
+                {% endfor %}
+            </div>
+        {% elif score < 30 %}
+            <h2 style="color: red;">You gotta work a lot more to reach your goal!</h2>
+            {% if pivot %}
+                <div style="background: #201415; padding: 15px; border-radius: 8px;">
+                    <p><strong>Alternative Path:</strong> You can maybe check out <strong>{{ pivot.role }}</strong>. You already have a {{ pivot.pct }}% match there!</p>
+                </div>
+            {% endif %}
+        {% endif %}
+
+        <div style="display: flex; justify-content: space-around; text-align: left; margin-top: 30px;">
+            <div style="width: 45%;">
+                <h4 style="color: green;">Skills Detected (Required & Found):</h4>
+                <ul>
+                    {% for s in found %} <li>{{ s }}</li> {% endfor %}
+                </ul>
+            </div>
+            <div style="width: 45%;">
+                <h4 style="color: red;">Bridge the Gap (Required but Missing):</h4>
+                <ul>
+                    {% for s in gaps %} <li>{{ s }}</li> {% endfor %}
+                </ul>
+            </div>
+        </div>
+
+        <br><a href="/">Back to Search</a>
+    </div>
+
+    <script>
+        const ctx = document.getElementById('scoreChart').getContext('2d');
+        new Chart(ctx, {
+            type: 'pie',
+            data: {
+                labels: ['Skills You Have', 'Skills You Lack'],
+                datasets: [{
+                    data: [{{ num_found }}, {{ num_missing }}],
+                    backgroundColor: ['#4CAF50', '#F44336']
+                }]
+            },
+            options: {
+                plugins: {
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return context.label + ": " + context.raw + " skills";
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    </script>
+</body>
+</html>

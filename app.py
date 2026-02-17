@@ -1,92 +1,106 @@
-# ---------------- IMPORTS ----------------
 import os
-# MuPDF is a C based library to read PDFs and PyMuPDF is the Python wrapper for it
-import fitz  # PyMuPDF: The library that reads PDFs
+import fitz  # PyMuPDF
 import spacy
+import json
+import difflib
 from flask import Flask, render_template, request
 from spacy.matcher import PhraseMatcher
-from sklearn.feature_extraction.text import CountVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
 
-
-# ---------------- CONFIGURATION ----------------
 app = Flask(__name__)
-nlp = spacy.load("en_core_web_sm") # Loading the pre-trained English model
- # nlp - Brain of our NLP operations
- # doc - A processed text that we can analyze
+nlp = spacy.load("en_core_web_sm")
 
-# Create uploads folder
-UPLOAD_FOLDER = 'uploads'
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+# Load your custom dataset
+with open('jobs_db.json', 'r') as f:
+    JOBS_DB = json.load(f)
 
+# Initialize Matcher with all skills from our DB
+matcher = PhraseMatcher(nlp.vocab, attr="LOWER")
+all_skills = list(set([skill for sublist in JOBS_DB.values() for skill in sublist]))
+patterns = [nlp.make_doc(skill) for skill in all_skills]
+matcher.add("SKILL_BANK", patterns)
 
-# ---------------- NLP LOGIC ----------------
-def get_skills_from_pdf(pdf_path):
-    """NLP: Extracting specific words from a messy PDF string."""
+def extract_skills_from_pdf(pdf_path):
     text = ""
-    with fitz.open(pdf_path) as doc:    # fitz.open() creates a doc object that we can iterate through to get text from each page
+    with fitz.open(pdf_path) as doc:
         for page in doc:
-            text += page.get_text() # type: ignore
+            text += page.get_text()
     
-    # This is our 'Skill Library'. In a real app, this would have 1000s of words.
-    skill_bank = ["Python", "SQL", "Tableau", "Flask", "HTML", "CSS", "Machine Learning", "Statistics", "Data Visualization", "Javascript"]
-    
-    matcher = PhraseMatcher(nlp.vocab, attr="LOWER")
-    patterns = [nlp.make_doc(text) for text in skill_bank]  # take each skill from skill bank
-    matcher.add("Skills", patterns)                         # And add it to matcher list
-    
-    doc = nlp(text)
-    matches = matcher(doc) # parse thru doc and find matches based on patterns we added
+    doc_nlp = nlp(text)
+    matches = matcher(doc_nlp)
+    found = [doc_nlp[start:end].text.strip().lower() for _, start, end in matches]
+    return list(set(found))
 
-    # Return unique skills found, formatted nicely
-    return list(set([doc[start:end].text.title() for _, start, end in matches]))
-
-
-# ---------------- DATA SCIENCE LOGIC ----------------
-def calculate_match(user_skills, target_role):
-    """DATA SCIENCE: Using Math to compare two sets of data."""
-    job_db = {
-        "Data Analytics": ["Python", "SQL", "Tableau", "Statistics", "Data Visualization"],
-        "Web Dev": ["HTML", "CSS", "Flask", "SQL", "Javascript"]
-    }
-    
-    target_skills = job_db.get(target_role, [])
-    if not user_skills: return 0, target_skills
-    
-    vectorizer = CountVectorizer()  # according to matching words in JD and resume, form two vectors with 0 & 1, dot product used
-    count_matrix = vectorizer.fit_transform([" ".join(user_skills), " ".join(target_skills)])
-    # Cosine Similarity: Turning words into vectors (numbers) to find the 'angle' between them
-    # A score of 1.0 is a perfect match, 0.0 is no match.
-    score = cosine_similarity(count_matrix[0:1], count_matrix[1:2])[0][0] # type: ignore
-    
-    # Gap Analysis: Simple set subtraction
-    missing = [s for s in target_skills if s not in user_skills]
-    return round(score * 100, 2), missing
-
-
-# ---------------- THE ROUTES (Web Part) ----------------
-@app.route('/') #Homepage route
+@app.route('/')
 def index():
     return render_template('index.html')
 
-@app.route('/analyze', methods=['POST'])  #When user hit submit button, POST request
+@app.route('/analyze', methods=['POST'])
 def analyze():
     file = request.files['resume']
-    target = request.form.get('target_role')
+    target_input = request.form.get('target_role', '').strip()
     
-    # Save the file temporarily
-    file_path = os.path.join(UPLOAD_FOLDER, file.filename) # type: ignore
+    if not file or not target_input:
+        return "Please upload a resume and enter a domain.", 400
+
+    file_path = os.path.join('uploads', file.filename)
     file.save(file_path)
+
+    # 1. Fuzzy Match the Job Title
+    role_names = list(JOBS_DB.keys())
+    best_matches = difflib.get_close_matches(target_input.lower(), [r.lower() for r in role_names], n=1, cutoff=0.3)
+
+    if not best_matches:
+        return f"<h1>Role Not Found</h1><p>'{target_input}' is not in our database.</p><a href='/'>Back</a>"
     
-    # Execute the NLP and Data Science functions
-    user_found = get_skills_from_pdf(file_path)
-    match_percentage, missing_skills = calculate_match(user_found, target)
+    # Get official name and required skills
+    target_role = next(role for role in role_names if role.lower() == best_matches[0])
+    required_skills = [s.lower() for s in JOBS_DB[target_role]]
+
+    # 2. Extract skills from resume
+    resume_skills_lower = extract_skills_from_pdf(file_path)
+
+    # 3. Filtered Logic: Only skills that belong to the target job
+    matched_skills = [s.title() for s in required_skills if s in resume_skills_lower]
+    missing_skills = [s.title() for s in required_skills if s not in resume_skills_lower]
     
-    return render_template('result.html', 
-                           score=match_percentage, 
-                           gaps=missing_skills, 
-                           role=target, 
-                           found=user_found)
+    score = round((len(matched_skills) / len(required_skills)) * 100, 2)
+
+    # 4. Growth/Pivot Logic
+    growth_options = []
+    pivot_option = None
+
+    if score >= 85:
+        # Growth: Find roles where user has >60% match
+        for role, skills in JOBS_DB.items():
+            if role == target_role: continue
+            r_skills = [s.lower() for s in skills]
+            m_count = len([s for s in r_skills if s in resume_skills_lower])
+            m_pct = round((m_count / len(r_skills)) * 100, 2)
+            if m_pct >= 60:
+                growth_options.append({"role": role, "pct": m_pct})
+    
+    elif score < 30:
+        # Pivot: Find any role where user has >30% match
+        highest_pct = 0
+        for role, skills in JOBS_DB.items():
+            if role == target_role: continue
+            r_skills = [s.lower() for s in skills]
+            m_count = len([s for s in r_skills if s in resume_skills_lower])
+            m_pct = round((m_count / len(r_skills)) * 100, 2)
+            if m_pct > 30 and m_pct > highest_pct:
+                highest_pct = m_pct
+                pivot_option = {"role": role, "pct": m_pct}
+
+    return render_template('results.html', 
+                           role=target_role, 
+                           score=score, 
+                           found=matched_skills, 
+                           gaps=missing_skills,
+                           growth=growth_options,
+                           pivot=pivot_option,
+                           num_found=len(matched_skills),
+                           num_missing=len(missing_skills))
 
 if __name__ == '__main__':
+    os.makedirs('uploads', exist_ok=True)
     app.run(debug=True)
